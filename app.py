@@ -62,8 +62,7 @@ def counter(update,context):
     count = text.sort_words(reverse=True)
     count_translate={k:(translate(k,to_idiom),v)
                      for k,v in count.items() if len(k) > 3}
-    best_format = json.dumps(count_translate, indent=1, ensure_ascii=False)
-    update.message.reply_text(best_format)
+    update.message.reply_text(str(count_translate))
     return ConversationHandler.END
 
 
