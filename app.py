@@ -1,6 +1,7 @@
 from Histogram_english import Text
 import logging
 import key
+import json 
 from telegram.ext import (
     Updater,
     CommandHandler,
@@ -49,17 +50,21 @@ def help(update,context):
     
     
 def counter_message(update,context):
-    text = 'Send me the text to count the number of times each word is repeated.'
+    text = """Send me the text to count the number of times each word is repeated.\n \
+Example: toes: this is only example"""
     update.message.reply_text(text)
+    return IMPUT_TEXT_TRANSLATE
     
     
 def counter(update,context):
-    text = Text(update.message.text)
-    update.message.reply_text(text.sort_words(reverse=True))
-
-
-def prueba(update,context): 
-    return update.message.reply_text()
+    text,to_idiom=separate_idiom_text(update.message.text)
+    text = Text(text)
+    count = text.sort_words(reverse=True)
+    count_translate={k:(translate(k,to_idiom),v)
+                     for k,v in count.items() if len(k) > 3}
+    best_format = json.dumps(count_translate, indent=1, ensure_ascii=False)
+    update.message.reply_text(best_format)
+    return ConversationHandler.END
 
 
 def error(update, context):
@@ -70,21 +75,30 @@ def error(update, context):
 IMPUT_TEXT_TRANSLATE=0 
 
 def translate_command_handler(update,context): 
-    update.message.reply_text("Send me a text to translate")
+    text_messege="""Send me a text to translate with format: to(code idiom) \
+Example: toes:Hello World!"""
+    update.message.reply_text(text_messege)
     return IMPUT_TEXT_TRANSLATE
+
+def separate_idiom_text(message): 
+    to_idiom = message[2:4]
+    text = message[5:]
+    return text,to_idiom
     
-def translate_messege(update,context):
-    text = update.message.text
+def translate(text,to_idiom):
     idiom_origin=idiom_detection(text)
-    to_idiom = ""
-    model_id=f"{0}-{1}".format(idiom_origin,to_idiom)
+    model_id=f"{idiom_origin}-{to_idiom}"
     translation = language_translator.translate(text=text,
                                                 model_id=model_id).get_result()
     translated = translation["translations"][0]["translation"]    
-    update.message.reply_text(translated)
+    return translated
     
-def input_text(update,context):
-    pass
+def send_translate(update,context):
+    text,to_idiom=separate_idiom_text(update.message.text)
+    translated = translate(text,to_idiom)
+    update.message.reply_text(translated)
+    return ConversationHandler.END
+
 
 def idiom_detection(text):
     text = TextBlob(text)
@@ -100,7 +114,7 @@ def main():
     # Get the dispatcher to register handlers
     dp = updater.dispatcher
     
-    # on different commands - answer in Telegram
+    # on different commands - answer counterin Telegram
     dp.add_handler(CommandHandler('start', start))
     dp.add_handler(CommandHandler('help', help))
     
@@ -109,13 +123,21 @@ def main():
             CommandHandler("translate",translate_command_handler)
         ],
         states ={
-            IMPUT_TEXT_TRANSLATE:[MessageHandler(Filters.text,input_text)]
-        }
+            IMPUT_TEXT_TRANSLATE:[MessageHandler(Filters.text,send_translate)]
+        },
+        fallbacks=[] 
     ))
     
-    # on noncommand i.e message - echo the message on Telegram
-    #dp.add_handler(MessageHandler(Filters.text,idiom_detection))
-
+    dp.add_handler(ConversationHandler(
+        entry_points=[
+            CommandHandler("count",counter_message)
+        ],
+        states ={
+            IMPUT_TEXT_TRANSLATE:[MessageHandler(Filters.text,counter)]
+        },
+        fallbacks=[] 
+    ))
+    
     # log all errors
     dp.add_error_handler(error)
     
