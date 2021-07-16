@@ -2,6 +2,7 @@ from Histogram_english import Text
 import logging
 import key
 import json 
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Updater,
     CommandHandler,
@@ -9,17 +10,10 @@ from telegram.ext import (
     MessageHandler,
     Filters)
 from textblob import TextBlob
-from ibm_watson import LanguageTranslatorV3
-from ibm_cloud_sdk_core.authenticators import IAMAuthenticator
 
 
-authenticator = IAMAuthenticator(key.API_KEY)
-language_translator = LanguageTranslatorV3(
-    version='2018-05-01',
-    authenticator=authenticator)
 
 
-language_translator.set_service_url(key.service_url)
 
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -48,6 +42,11 @@ def help(update,context):
 
     update.message.reply_text(help_messege)
     
+def error(update, context):
+    """Log Errors caused by Updates."""
+    logger.warning('Update "%s" caused error "%s"', update, context.error)
+ 
+    
     
 def counter_message(update,context):
     text = """Send me the text to count the number of times each word is repeated.\n \
@@ -66,10 +65,57 @@ def counter(update,context):
     return ConversationHandler.END
 
 
-def error(update, context):
-    """Log Errors caused by Updates."""
-    logger.warning('Update "%s" caused error "%s"', update, context.error)
 
+IDIOM=""
+IMPUT_VOICE=0
+
+
+def voice_message(update,context):
+    messege="Write the language in which you will send the message.\
+It can be English or Spanish only."
+    update.message.reply_text(messege)
+    return IDIOM
+    
+def voice_save(update,context): 
+    file_id= update.message.voice.file_id
+    file = context.bot.getFile(file_id)
+    file.download('./voice/voice.ogg')
+
+def send_transcript_to_text(update,context):
+    voice_save(update,context)
+    text= transcript_to_text('./voice/voice.ogg')
+    update.message.reply_text(text)
+    return ConversationHandler.END
+
+def receive_idiom(update,context): 
+    idiom = update.message.text.strip().lower()
+    
+    if idiom=="spanish": 
+        IDIOM = "es-CL_BroadbandModel"
+        print(IDIOM)
+    else:
+        IDIOM = "en-US_BroadbandModel"
+        print(IDIOM)
+    update.message.reply_text("Send me your speech")
+    return IMPUT_VOICE
+    
+        
+def transcript_to_text(path_file):
+    from ibm_watson import SpeechToTextV1
+    from ibm_cloud_sdk_core.authenticators import IAMAuthenticator
+
+    authenticator = IAMAuthenticator(key.API_SPEECH_KEY)
+    speech_to_text = SpeechToTextV1(authenticator=authenticator)
+    speech_to_text.set_service_url(key.service_speech_url) 
+    print(IDIOM)
+    with open(path_file,'rb') as audio_file:
+        recognition_job = speech_to_text.create_job(
+                                                audio_file,
+                                                content_type='audio/ogg',
+                                                model=IDIOM).get_result()
+
+    return recognition_job["results"][0]["alternatives"][0]["transcript"]
+    
 
 IMPUT_TEXT_TRANSLATE=0 
 
@@ -85,6 +131,12 @@ def separate_idiom_text(message):
     return text,to_idiom
     
 def translate(text,to_idiom):
+    from ibm_watson import LanguageTranslatorV3
+    from ibm_cloud_sdk_core.authenticators import IAMAuthenticator
+    authenticator = IAMAuthenticator(key.API_TRANSLATE_KEY)
+    language_translator = LanguageTranslatorV3(version='2018-05-01',
+                                               authenticator=authenticator)
+    language_translator.set_service_url(key.service_translate_url)
     idiom_origin=idiom_detection(text)
     model_id=f"{idiom_origin}-{to_idiom}"
     translation = language_translator.translate(text=text,
@@ -103,6 +155,7 @@ def idiom_detection(text):
     text = TextBlob(text)
     idiom = text.detect_language()
     return idiom
+
 
     
 def main():    
@@ -133,6 +186,17 @@ def main():
         ],
         states ={
             IMPUT_TEXT_TRANSLATE:[MessageHandler(Filters.text,counter)]
+        },
+        fallbacks=[] 
+    ))
+    
+    dp.add_handler(ConversationHandler(
+        entry_points=[
+            CommandHandler("info",voice_message)
+        ],
+        states ={
+            IDIOM:[MessageHandler(Filters.text,receive_idiom)],
+            IMPUT_VOICE:[MessageHandler(Filters.voice,send_transcript_to_text)]
         },
         fallbacks=[] 
     ))
